@@ -1,0 +1,178 @@
+{% extends 'layout.html' %}
+{% load static %}
+
+{% block style %}
+    <link rel="stylesheet" href="{% static 'css/recogn.css'%}" type="text/css">
+{% endblock %}
+
+{% block title %}Обработка фотографии{% endblock %}
+
+{% block content %}
+    <div class="header">
+        <h1>Perception for Autonomous Systems</h1>
+        <p>Иерархическая библиотека восприятия</p>
+    </div>
+    <div class="content">
+        <form id="emotion_form" method="post" enctype="multipart/form-data" action="{% url 'detect' %}">
+            {% csrf_token %}
+            <div class="container">
+                <div class="image_container1" id="processed_container">
+                    <div class="emotion_text" id="emotion_text">
+                        {% if user_emotion %}
+                            <p>Эмоция: {{ user_emotion }}</p>
+                        {% else %}
+                            <p>Эмоция: Не определено</p>
+                        {% endif %}
+                    </div> 
+                    <div class="image_background">
+                        <img id="img_preview1" src="">
+                    </div>
+                    <label class="file_label">
+                        <input type="file" name="img_obj1" class="file_input" required>
+                        <span>Выбрать файл</span>
+                    </label>
+                    <button id="apply_button"type="submit">Определить эмоцию</button>
+                </div> 
+                <div class="image_container">
+                    <div class="image_background">
+                        <input type="hidden" name="img_obj2" id="hidden_img_obj2">
+                        {% if matching_image %}
+                            <img id="img_preview2" src="{{ matching_image }}">
+                        {% else %}
+                            <img id="img_preview2" src="">
+                        {% endif %}
+                    </div>
+                    <p>Подобранный макияж</p>
+                </div>
+                <div class="image_container">
+                    <div class="image_background" id="result_image">
+                        <img src="{{ image_path }}">
+                    </div>
+                    <button id="apply_makeup"type="button">Применить</button>
+                    <button id="save_button" type="button" style="display: none;">Сохранить</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+    $(document).ready(function () {
+        let processedImageUrl1 = '';
+        let processedImageUrl2 = '';
+        $('input[name=img_obj1]').change(function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('img_obj1', file);
+            $.ajax({
+                url: '{% url "recognize" %}',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (data) {
+                    if (data.processed_image_url) {
+                        processedImageUrl1 = data.processed_image_url;
+                        $('#img_preview1').attr('src', processedImageUrl1 + '?' + Math.random());
+                        $('#img_preview1').show();
+                        $('#img_preview1').closest('.image_background').addClass('no-border');
+                    }
+                },
+                error: function (xhr) {
+                    console.error("Ошибка загрузки: ", xhr.responseText);
+                    alert("Ошибка обработки изображения");
+                }
+            });
+        });
+        $('#emotion_form').submit(function(event) {
+            event.preventDefault();
+            var formData = new FormData($(this)[0]);
+            $.ajax({
+                type: 'POST',
+                url: $(this).attr('action'), 
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.user_emotion) {
+                        $('#emotion_text').text("Определенная эмоция: " + response.user_emotion);
+                    }
+        
+                    if (response.matching_image) {
+                        $('#img_preview2').attr('src', response.matching_image);
+                        $('#img_preview2').closest('.image_background').addClass('no-border');
+                    }
+                },
+                error: function(xhr, errmsg, err) {
+                    console.log("Ошибка: " + xhr.status + ": " + xhr.responseText);
+                }
+            });
+        });
+        $('#apply_makeup').click(function (event) {
+        event.preventDefault();
+
+        const fullUrl = $('#img_preview2').attr('src');
+        const relativePath = fullUrl.split('/static/')[1]; 
+        processedImageUrl2 = '/static/' + relativePath;
+
+        if (!processedImageUrl1 || !processedImageUrl2) {
+            alert("Сначала загрузите оба изображения!");
+            return;
+        }
+        const formData = new FormData();
+        formData.append('img_path1', processedImageUrl1);
+        formData.append('img_path2', processedImageUrl2);
+        formData.append('source', 'recogn');
+
+        $.ajax({
+            type: 'POST',
+            url: '{% url "result" %}',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (response) {
+                const rand = Math.random().toString(36).substring(7);
+                $('#result_image img').attr('src', response.image_path + '?' + rand);
+                $('#result_image img').closest('.image_background').addClass('no-border');
+                $('#save_button').show();
+            },
+            error: function (xhr, errmsg, err) {
+                console.log("Ошибка: " + xhr.status + ": " + xhr.responseText);
+            }
+        });
+    });
+    $('#save_button').click(function () {
+        const resultImageUrl = $('#result_image img').attr('src');
+        const randomString = Math.random().toString(36).substring(7);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = resultImageUrl + '?' + randomString;
+        downloadLink.download = 'processed_image.jpeg';
+        downloadLink.click();
+    });
+});
+</script>
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        const csrftoken = getCookie('csrftoken');
+        $.ajaxSetup({
+            beforeSend: function (xhr, settings) {
+                if (!(/^GET|HEAD|OPTIONS|TRACE$/.test(settings.type)) && !this.crossDomain) {
+                    xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                }
+            }
+        });
+    </script>
+{% endblock %}
